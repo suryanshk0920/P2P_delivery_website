@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum RequestType {
+  PARCEL       // pickup from main gate
+  FOOD         // from campus canteen/dhaba
+  SHOP_ITEM    // from campus shop
+  OTHER
+}
+
+enum RequestStatus {
+  OPEN         // visible to all runners
+  ACCEPTED     // runner claimed it
+  PICKED_UP    // runner has the item, en route
+  DELIVERED    // confirmed by requester
+  CANCELLED    // cancelled before pickup
+  DISPUTED     // either party raised a dispute
+  EXPIRED      // no runner accepted in time
+}
+
+enum EscrowStatus {
+  PENDING      // payment not yet made
+  HELD         // payment received, held by platform
+  RELEASED     // paid out to runner
+  REFUNDED     // returned to requester
+}
+
+enum RunnerTier {
+  PROBATIONARY // 0-9 deliveries
+  TRUSTED      // 10-49 deliveries, rating > 4.3
+  VERIFIED     // 50+ deliveries, rating > 4.7
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_FOR_REQUESTER
+  RESOLVED_FOR_RUNNER
+}
+
+// ─────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────
+
+model Hostel {
+  id          String   @id @default(cuid())
+  name        String
+  university  String
+  address     String
+  isActive    Boolean  @default(true)
+  users       User[]
+  requests    Request[]
+  shops       Shop[]
+  createdAt   DateTime @default(now())
+}
+
+model User {
+  id               String         @id @default(cuid())
+  email            String         @unique
+  name             String
+  phone            String?
+  avatarUrl        String?
+  hostelId         String?
+  hostel           Hostel?        @relation(fields: [hostelId], references: [id])
+  roomNumber       String?
+  hostelBlock      String?
+  studentIdUrl     String?
+  isVerified       Boolean        @default(false)
+  isAdmin          Boolean        @default(false)
+  isBanned         Boolean        @default(false)
+  runnerProfile    RunnerProfile?
+  requestsMade     Request[]      @relation("Requester")
+  deliveriesMade   Request[]      @relation("Runner")
+  ratingsGiven     Rating[]       @relation("RatingGiver")
+  ratingsReceived  Rating[]       @relation("RatingReceiver")
+  disputes         Dispute[]
+  notifications    Notification[]
+  walletBalance    Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model RunnerProfile {
+  id               String     @id @default(cuid())
+  userId           String     @unique
+  user             User       @relation(fields: [userId], references: [id])
+  isActive         Boolean    @default(false)
+  totalDeliveries  Int        @default(0)
+  rating           Float      @default(5.0)
+  tier             RunnerTier @default(PROBATIONARY)
+  depositLocked    Int        @default(0)
+  razorpayAccId    String?
+  bio              String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+}
+
+model Shop {
+  id          String    @id @default(cuid())
+  hostelId    String
+  hostel      Hostel    @relation(fields: [hostelId], references: [id])
+  name        String
+  description String?
+  location    String
+  isActive    Boolean   @default(true)
+  requests    Request[]
+  createdAt   DateTime  @default(now())
+}
+
+model Request {
+  id               String        @id @default(cuid())
+  hostelId         String
+  hostel           Hostel        @relation(fields: [hostelId], references: [id])
+  requesterId      String
+  requester        User          @relation("Requester", fields: [requesterId], references: [id])
+  runnerId         String?
+  runner           User?         @relation("Runner", fields: [runnerId], references: [id])
+  shopId           String?
+  shop             Shop?         @relation(fields: [shopId], references: [id])
+  type             RequestType
+  title            String
+  description      String
+  pickupLocation   String
+  deliveryRoom     String
+  deliveryBlock    String
+  deliveryFee      Int
+  itemValue        Int?
+  status           RequestStatus @default(OPEN)
+  escrowStatus     EscrowStatus  @default(PENDING)
+  razorpayOrderId  String?
+  razorpayPaymentId String?
+  pickupPhotoUrl   String?
+  deliveryPhotoUrl String?
+  acceptedAt       DateTime?
+  pickedUpAt       DateTime?
+  deliveredAt      DateTime?
+  expiresAt        DateTime
+  rating           Rating?
+  dispute          Dispute?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model Rating {
+  id          String   @id @default(cuid())
+  requestId   String   @unique
+  request     Request  @relation(fields: [requestId], references: [id])
+  giverId     String
+  giver       User     @relation("RatingGiver", fields: [giverId], references: [id])
+  receiverId  String
+  receiver    User     @relation("RatingReceiver", fields: [receiverId], references: [id])
+  score       Int
+  comment     String?
+  createdAt   DateTime @default(now())
+}
+
+model Dispute {
+  id          String        @id @default(cuid())
+  requestId   String        @unique
+  request     Request       @relation(fields: [requestId], references: [id])
+  raisedById  String
+  raisedBy    User          @relation(fields: [raisedById], references: [id])
+  reason      String
+  evidence    String[]
+  status      DisputeStatus @default(OPEN)
+  resolution  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  type      String
+  metadata  Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
